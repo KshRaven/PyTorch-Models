@@ -6,6 +6,4 @@ from .sub import Attention, TransformerBase
 
 from .main import AutoEncoder
 
-import util
-import sub
-import main
+from . import util, sub, main
