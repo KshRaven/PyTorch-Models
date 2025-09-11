@@ -420,8 +420,9 @@ class RoPE(nn.Module):
                  device: DEVICE = 'cpu', dtype: DTYPE = torch.float32):
         super(RoPE, self).__init__()
         # BUILD - [batch_size, seq_len, head_dim / 2], EMBEDDING - [seq_len, head_dim / 2]
+        self.conv_dtype = dtype if any([td == dtype for td in [torch.float32, torch.float64]]) else torch.float32
         self.complex_frequencies = self._generate_encoding(max_seq_len, embed_size // heads, constant, 0)
-        self.complex_frequencies = self.complex_frequencies.to(device=device).unsqueeze(0).unsqueeze(-2)
+        self.complex_frequencies = self.complex_frequencies.to(device=device, dtype=dtype).unsqueeze(0).unsqueeze(-2)
         # EMBEDDING - [1, sequence, embed_size]
         self.select = torch.arange(max_seq_len, device=device, dtype=torch.int32)
 
@@ -458,7 +459,7 @@ class RoPE(nn.Module):
     def forward(self, tensor: Tensor, pos_idx: int = None, verbose: int = None):
         seq_len = tensor.shape[-3]
         # [batch_size, sequence, heads, head_dim] -> [batch_size, sequence, heads, head_dim/2, 2]
-        complex_tensor = torch.view_as_complex(tensor.view(*tensor.shape[:-1], -1, 2))
+        complex_tensor = torch.view_as_complex(tensor.view(*tensor.shape[:-1], -1, 2).to(self.conv_dtype))
         # [batch_size, sequence, heads, head_dim/2] * [1, 1, sequence, 1, head_dim/2] = [batch_size, sequence, heads, head_dim/2]
         complex_frequencies = self.complex_frequencies
         if seq_len > 1:
@@ -475,7 +476,7 @@ class RoPE(nn.Module):
             print(get_tensor_info(complex_frequencies, 'Complex Frequencies Debugging', verbose))
             raise e
         # [batch_size, sequence, heads, head_dim / 2] -> [batch_size, sequence, heads, head_dim / 2, 2]
-        split_tensor = torch.view_as_real(rotated_tensor)
+        split_tensor = torch.view_as_real(rotated_tensor).to(self.dtype)
         # [records, sequence, heads, head_dim / 2, 2] -> [records, sequence, heads, head_dim]
         # [records, sequence, heads, head_dim] -> [records, sequence, embed_size]
         tensor = split_tensor.reshape(*tensor.shape).type_as(tensor)
