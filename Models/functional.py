@@ -1,5 +1,5 @@
 
-from build.util.fancy_text import cmod, Fore
+from Models.util.fancy_text import cmod, Fore
 
 import torch
 import torch.nn as nn
