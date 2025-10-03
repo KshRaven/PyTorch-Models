@@ -27,9 +27,14 @@ class AutoEncoder(nn.Module):
         self.epsilon = 1e-9
         self.constant = 10000.0
         self.probabilistic = options.get('probabilistic', False)
+        self.fwd_exp = options.get('fwd_exp', 4)
+        self.out_bias = options.get('out_bias', True)
+        self.device = device
+        self.dtype = dtype
 
         self.encoder_embed = nn.Sequential(
             BufferEmbedding(inputs, embed_size, True, 'continuous', device, dtype),
+            BufferEncoding(max_seq_len, embed_size, True, 'discrete', device, dtype),
             Transpose(),
             DownStream(embed_size, kernel_size, self.norm_groups, stream_layers, bias, device, dtype,
                        stride=self.stride),
@@ -37,8 +42,8 @@ class AutoEncoder(nn.Module):
         )
         self.encoder_tx = TransformerBase(
             max_seq_len, embed_size, trans_layers, heads, kv_heads, differential, True, bias, device, dtype,
-            normalize=True, residual=True, auto_single=False, affine=self.affine, fwd_exp=4,
-            constant=self.constant, epsilon=self.epsilon,
+            normalize=True, residual=True, auto_single=False, affine=self.affine, fwd_exp=self.fwd_exp,
+            constant=self.constant, epsilon=self.epsilon, out_bias=self.out_bias,
         )
         self.encoder_fwd = nn.Sequential(
             nn.LayerNorm((embed_size,), self.epsilon, self.affine, False, device, dtype),
@@ -47,6 +52,7 @@ class AutoEncoder(nn.Module):
 
         self.decoder_embed = nn.Sequential(
             BufferEmbedding(self.outputs, embed_size, True, 'continuous', device, dtype),
+            BufferEncoding(max_seq_len, embed_size, True, 'discrete', device, dtype),
             Transpose(),
             UpStream(embed_size, kernel_size, self.norm_groups, stream_layers, bias, device, dtype,
                      stride=self.stride),
@@ -54,8 +60,8 @@ class AutoEncoder(nn.Module):
         )
         self.decoder_tx = TransformerBase(
             max_seq_len, embed_size, trans_layers, heads, kv_heads, differential, True, bias, device, dtype,
-            normalize=True, residual=True, auto_single=False, affine=self.affine, fwd_exp=4,
-            constant=self.constant, epsilon=self.epsilon,
+            normalize=True, residual=True, auto_single=False, affine=self.affine, fwd_exp=self.fwd_exp,
+            constant=self.constant, epsilon=self.epsilon, out_bias=self.out_bias,
         )
         self.decoder_fwd = nn.Sequential(
             nn.LayerNorm((embed_size,), self.epsilon, self.affine, False, device, dtype),
@@ -66,6 +72,19 @@ class AutoEncoder(nn.Module):
             nn.Linear(embed_size, self.outputs * 2, True, device, dtype),
         )
         self.eval()
+
+        # States
+        self._single_mode = False
+        self._decode_mode = False
+
+    def single_mode(self, state=True):
+        self._single_mode = state
+
+    def encoding_mode(self, state=True):
+        self._decode_mode = not state
+
+    def decoding_mode(self, state=False):
+        self._decode_mode = state
 
     def encode(self, tensor: Tensor, verbose: int = False, single: bool = False, get: bool = False) -> Tensor:
         squeeze = tensor.ndim == 2
@@ -121,8 +140,13 @@ class AutoEncoder(nn.Module):
     def learn(self, inputs, type=0):
         return self.decode(self.encode(inputs), type=type)
 
-    def forward(self, tensor: Tensor, verbose: int = False, single: bool = True, get: bool = False):
-        return self.encode(tensor, verbose, single, get)
+    def forward(self, tensor: Tensor, verbose: int = False, single: bool = True, decode: bool = False, get: bool = False):
+        decode |= self._decode_mode
+        single |= self._single_mode
+        tensor = self.encode(tensor, verbose, single and not decode, get)
+        if decode:
+            tensor = self.decode(tensor, verbose, single and decode, get)
+        return tensor
 
     def save(self, filename: str, file_no: int = None, directory: str = None, sub_directory: str = None,
              verbose: int = None):
@@ -140,3 +164,22 @@ class AutoEncoder(nn.Module):
         )
         if data is not None:
             self.load_state_dict(data)
+
+
+if __name__ == "__main__":
+    DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    DTYPE = torch.bfloat16
+    print([td == torch.bfloat16 for td in [torch.float32, torch.float64]])
+    encoder = AutoEncoder(
+        128, 3, 32, 1, 0, 1, 0, 1,
+        device=DEVICE, dtype=DTYPE,
+    )
+    rope = encoder.encoder_tx.layers[0].self_attention.rotary_embedding
+    print(rope.dtype, rope.conv_dtype)
+
+    verbose = 2
+    test_input = torch.randn(1, 32, 3, device=DEVICE, dtype=DTYPE)
+    # with torch.no_grad():
+    test_output_rev = encoder.decode(encoder.encode(test_input, verbose=verbose), verbose=verbose)
+    print(test_input)
+    print(test_output_rev)
