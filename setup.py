@@ -15,7 +15,7 @@ def load_requirements(filename='requirements.txt'):
 
 setup(
     name='Models',
-    version='0.1.0',
+    version='0.1.2',
     author='Bradley Odimmasi',
     author_email='bodimmasi@students.uonbi.ac.ke',
     description='Random Modules that can be used in various projects',

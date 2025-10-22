@@ -22,7 +22,7 @@ COLOURS = {lbl: clr for lbl, clr in vars(Fore).items() if
            not any(fltr in lbl for fltr in ['BLACK', 'WHITE']) and 'LIGHT' in lbl}
 
 
-class color_fetch:
+class color_fetch(object):
     def __init__(self):
         self.current_idx = 0
         self.colors = list(COLOURS.values())

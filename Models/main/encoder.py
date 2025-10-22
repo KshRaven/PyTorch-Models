@@ -47,7 +47,7 @@ class AutoEncoder(nn.Module):
         )
         self.encoder_fwd = nn.Sequential(
             nn.LayerNorm((embed_size,), self.epsilon, self.affine, False, device, dtype),
-            nn.Linear(embed_size, self.outputs, True, device, dtype),
+            nn.Linear(embed_size, self.outputs * 2, True, device, dtype),
         )
 
         self.decoder_embed = nn.Sequential(
@@ -94,6 +94,15 @@ class AutoEncoder(nn.Module):
         tensor = self.encoder_tx(tensor, verbose=verbose, single=single, get=get)
         # tensor = torch.cat(torch.std_mean(tensor, dim=-2), dim=-1)
         tensor = self.encoder_fwd(tensor)
+        mean, log_std = tensor.chunk(2, dim=-1)
+        if self.probabilistic:
+            std = torch.exp(log_std)
+            if self.training:
+                tensor = mean + std * torch.randn_like(std)
+            else:
+                tensor = distributions.Normal(mean, std).sample()
+        else:
+            tensor = mean
         if single:
             tensor = tensor.squeeze(-2)
         if squeeze:
