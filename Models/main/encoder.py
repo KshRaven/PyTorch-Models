@@ -149,7 +149,7 @@ class AutoEncoder(nn.Module):
     def learn(self, inputs, type=0):
         return self.decode(self.encode(inputs), type=type)
 
-    def forward(self, tensor: Tensor, verbose: int = False, single: bool = True, decode: bool = False, get: bool = False):
+    def forward(self, tensor: Tensor, verbose: int = False, single: bool = False, decode: bool = False, get: bool = False):
         decode |= self._decode_mode
         single |= self._single_mode
         tensor = self.encode(tensor, verbose, single and not decode, get)
